@@ -146,6 +146,7 @@ class Options(object):
         self.force_subtitle = False
         self.require_subtitle = False
         self.get_all_subtitles = False
+        self.get_only_episode_url = False
         self.get_raw_subtitles = False
         self.convert_subtitle_colors = False
         self.preferred = None
@@ -226,8 +227,9 @@ def get_all_episodes(stream, options, url):
         log.info("Episode %d of %d", idx + 1, len(episodes))
         log.info("Url: %s",o) 
 
-        # get_one_media overwrites options.output...
-        get_one_media(substream, copy.copy(options))
+        if not options.get_url or not options.get_only_episode_url:
+            # get_one_media overwrites options.output...
+            get_one_media(substream, copy.copy(options))
 
 
 def get_one_media(stream, options):
@@ -430,6 +432,9 @@ def main():
     parser.add_option("-g", "--get-url",
                       action="store_true", dest="get_url", default=False,
                       help="do not download any video, but instead print the URL.")
+    parser.add_option("--get-only-episode-url",
+                      action="store_true", dest="get_only_episode_url", default=False,
+                      help="do not get video UTLs, only print the episode URL.")
     parser.add_option("--dont-verify-ssl-cert", action="store_false", dest="ssl_verify", default=True,
                       help="Don't attempt to verify SSL certificates.")
     parser.add_option("--http-header", dest="http_headers", default=None, metavar="header1=value;header2=value2",
@@ -516,6 +521,7 @@ def mergeParserOption(options, parser):
     options.verbose = parser.verbose
     options.exclude = parser.exclude
     options.get_url = parser.get_url
+    options.get_only_episode_url = parser.get_only_episode_url
     options.ssl_verify = parser.ssl_verify
     options.http_headers = parser.http_headers
     options.stream_prio = parser.stream_prio
