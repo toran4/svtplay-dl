@@ -18,6 +18,7 @@ from svtplay_dl.fetcher.dash import dashparse
 from svtplay_dl.subtitle import subtitle
 from svtplay_dl.error import ServiceError
 
+URL_VIDEO_API = "http://api.svt.se/videoplayer-api/video/"
 
 class Svtplay(Service, OpenGraphThumbMixin):
     supported_domains = ['svtplay.se', 'svt.se', 'beta.svtplay.se', 'svtflow.se']
@@ -25,7 +26,7 @@ class Svtplay(Service, OpenGraphThumbMixin):
     def get(self):
         parse = urlparse(self.url)
         if parse.netloc == "www.svtplay.se" or parse.netloc == "svtplay.se":
-            if parse.path[:6] != "/video" and parse.path[:6] != "/klipp":
+            if parse.path[:6] != "/video" and parse.path[:6] != "/klipp" and parse.path[:8] != "/kanaler":
                 yield ServiceError("This mode is not supported anymore. Need the url with the video.")
                 return
 
@@ -33,6 +34,19 @@ class Svtplay(Service, OpenGraphThumbMixin):
         self.access = None
         if "accessService" in query:
             self.access = query["accessService"]
+
+        if parse.path[:8] == "/kanaler":
+            res = self.http.get(URL_VIDEO_API + "ch-{0}".format(parse.path[9:]))
+            try:
+                janson = res.json()
+            except json.decoder.JSONDecodeError:
+                yield ServiceError("Can't decode api request: {0}".format(res.request.url))
+                return
+            videos = self._get_video(janson)
+            self.options.live = True
+            for i in videos:
+                yield i
+            return
 
         match = re.search("__svtplay'] = ({.*});", self.get_urldata())
         if not match:
@@ -55,9 +69,6 @@ class Svtplay(Service, OpenGraphThumbMixin):
                         return
                     janson = json.loads(match.group(1))["videoPage"]
 
-        if "live" in janson["video"]:
-            self.options.live = janson["video"]["live"]
-
         if self.options.output_auto:
             self.options.service = "svtplay"
             self.options.output = self.outputfilename(janson["video"], self.options.output)
@@ -70,7 +81,7 @@ class Svtplay(Service, OpenGraphThumbMixin):
             vid = janson["video"]["programVersionId"]
         else:
             vid = janson["video"]["id"]
-        res = self.http.get("http://api.svt.se/videoplayer-api/video/{0}".format(vid))
+        res = self.http.get(URL_VIDEO_API + vid)
         try:
             janson = res.json()
         except json.decoder.JSONDecodeError:
@@ -81,8 +92,6 @@ class Svtplay(Service, OpenGraphThumbMixin):
             yield i
 
     def _get_video(self, janson):
-        if "live" in janson:
-            self.options.live = janson["live"]
         if "subtitleReferences" in janson:
             for i in janson["subtitleReferences"]:
                 if i["format"] == "websrt" and "url" in i:
@@ -159,73 +168,42 @@ class Svtplay(Service, OpenGraphThumbMixin):
 
     def find_all_episodes(self, options):
         parse = urlparse(self._url)
-        
-        if len(parse.path) > 7 and parse.path[-7:] == "rss.xml":
-            rss_url = self.url
-        else:
-            rss_url = re.search(r'<link rel="alternate" type="application/rss\+xml" [^>]*href="([^"]+)"', self.get_urldata())
-            if rss_url: 
-                rss_url = rss_url.group(1)
 
-        valid_rss = False
+        videos = []
         tab = None
-        if parse.query:
-            match = re.search("tab=(.+)", parse.query)
-            if match:
-                tab = match.group(1)
-
-        #Clips and tab can not be used with RSS-feed
-        if rss_url and not self.options.include_clips and not tab:
-            rss_data = self.http.request("get", rss_url).content
-
-            try:
-                xml = ET.XML(rss_data)
-                episodes = [x.text for x in xml.findall(".//item/link")]
-                #TODO add better checks for valid RSS-feed here
-                valid_rss = True
-            except ET.ParseError:
-                log.info("Error parsing RSS-feed at {0}, make sure it is a valid RSS-feed, will use other method to find episodes.".format(rss_url))
+        match = re.search("__svtplay'] = ({.*});", self.get_urldata())
+        if re.search("sista-chansen", parse.path):
+            videos = self._last_chance(videos, 1)
+        elif not match:
+            log.error("Couldn't retrieve episode list.")
+            return
         else:
-            #if either tab or include_clips is set remove rss.xml from url if set manually. 
-            if len(parse.path) > 7 and parse.path[-7:] == "rss.xml":                
-                self._url = self.url.replace("rss.xml","")
-
-        if not valid_rss:
-            videos = []
-            tab = None
-            match = re.search("__svtplay'] = ({.*});", self.get_urldata())
-            if re.search("sista-chansen", parse.path):
-                videos = self._last_chance(videos, 1)
-            elif not match:
-                log.error("Couldn't retrieve episode list.")
-                return
+            dataj = json.loads(match.group(1))
+            if re.search("/genre", parse.path):
+                videos = self._genre(dataj)
             else:
-                dataj = json.loads(match.group(1))
-                if re.search("/genre", parse.path):
-                    videos = self._genre(dataj)
-                else:
-                    if parse.query:
-                        match = re.search("tab=(.+)", parse.query)
-                        if match:
-                            tab = match.group(1)
-                            
-                    items = dataj["relatedVideoContent"]["relatedVideosAccordion"]
-                    for i in items:
-                        if tab:
-                            if i["slug"] == tab:
-                                videos = self.videos_to_list(i["videos"], videos)
-                        else:
-                            if "klipp" not in i["slug"] and "kommande" not in i["slug"]:
-                                videos = self.videos_to_list(i["videos"], videos)
-                        if self.options.include_clips: 
-                            if i["slug"] == "klipp":
-                                videos = self.videos_to_list(i["videos"], videos)
+                if parse.query:
+                    match = re.search("tab=(.+)", parse.query)
+                    if match:
+                        tab = match.group(1)
 
-            episodes = [urljoin("http://www.svtplay.se", x) for x in videos]
+                items = dataj["relatedVideoContent"]["relatedVideosAccordion"]
+                for i in items:
+                    if tab:
+                        if i["slug"] == tab:
+                            videos = self.videos_to_list(i["videos"], videos)
+                    else:
+                        if "klipp" not in i["slug"] and "kommande" not in i["slug"]:
+                            videos = self.videos_to_list(i["videos"], videos)
+                    if self.options.include_clips:
+                        if i["slug"] == "klipp":
+                            videos = self.videos_to_list(i["videos"], videos)
+
+        episodes = [urljoin("http://www.svtplay.se", x) for x in videos]
 
         if options.all_last > 0:
-            return sorted(episodes)[-options.all_last:]
-        return sorted(episodes)
+            return episodes[-options.all_last:]
+        return episodes
 
     def videos_to_list(self, lvideos, videos):
         for n in lvideos:
@@ -254,8 +232,10 @@ class Svtplay(Service, OpenGraphThumbMixin):
         else:
             directory = ""
         name = None
-        if data["programTitle"]:
+        if "programTitle" in data and data["programTitle"]:
             name = filenamify(data["programTitle"])
+        elif "titleSlug" in data and data["titleSlug"]:
+            name = filenamify(data["titleSlug"])
         other = filenamify(data["title"])
 
         if "programVersionId" in data:
@@ -283,7 +263,7 @@ class Svtplay(Service, OpenGraphThumbMixin):
                 title += "-syntolkat"
             if data["accessService"] == "signInterpretation":
                 title += "-teckentolkat"
-        title += "-{}-svtplay".format(id)
+        title += "-{}-{}".format(id, self.__class__.__name__.lower())
         title = filenamify(title)
         if len(directory):
             output = os.path.join(directory, title)

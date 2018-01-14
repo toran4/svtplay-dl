@@ -49,6 +49,7 @@ from svtplay_dl.service.solidtango import Solidtango
 from svtplay_dl.service.sportlib import Sportlib
 from svtplay_dl.service.sr import Sr
 from svtplay_dl.service.svt import Svt
+from svtplay_dl.service.barnkanalen import Barnkanalen
 from svtplay_dl.service.svtplay import Svtplay
 from svtplay_dl.service.tv4play import Tv4play
 from svtplay_dl.service.urplay import Urplay
@@ -59,12 +60,13 @@ from svtplay_dl.service.vidme import Vidme
 from svtplay_dl.service.vimeo import Vimeo
 from svtplay_dl.service.youplay import Youplay
 
-__version__ = "1.9.6"
+__version__ = "1.9.7"
 
 sites = [
     Aftonbladet,
     Aftonbladettv,
     Bambuser,
+    Barnkanalen,
     Bigbrother,
     Cmore,
     Dbtv,
@@ -132,6 +134,7 @@ class Options(object):
         self.output = None
         self.resume = False
         self.live = False
+        self.capture_time = -1
         self.silent = False
         self.force = False
         self.quality = 0
@@ -163,6 +166,7 @@ class Options(object):
         self.stream_prio = None
         self.remux = False
         self.silent_semi = False
+        self.proxy = None
 
 def get_multiple_media(urls, options):
     if options.output and os.path.isfile(options.output):
@@ -385,6 +389,8 @@ def main():
     parser.add_option("-l", "--live",
                       action="store_true", dest="live", default=False,
                       help="enable for live streams (RTMP based ones)")
+    parser.add_option("-c", "--capture_time", default=-1, type=int, metavar = "capture_time",
+                      help = "define capture time in minutes of a live stream")
     parser.add_option("-s", "--silent",
                       action="store_true", dest="silent", default=False,
                       help="be less verbose")
@@ -504,6 +510,7 @@ def mergeParserOption(options, parser):
     options.output = parser.output
     options.resume = parser.resume
     options.live = parser.live
+    options.capture_time = parser.capture_time
     options.silent = parser.silent
     options.force = parser.force
     options.quality = parser.quality
