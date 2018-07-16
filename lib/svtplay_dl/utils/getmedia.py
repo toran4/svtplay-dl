@@ -81,7 +81,7 @@ def get_all_episodes(stream, url):
         log.info("Episode %d of %d", idx + 1, len(episodes))
         log.info("Url: %s", o)
 
-        if not (options.get_url and options.get_only_episode_url):
+        if not (options.get("get_url") and options.get("get_only_episode_url")):
             # get_one_media overwrites options.output...
             get_one_media(substream)
 
