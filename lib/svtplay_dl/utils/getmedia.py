@@ -51,12 +51,12 @@ def get_media(url, options, version="Unknown"):
             sys.exit(2)
 
     if options.get("all_episodes"):
-        get_all_episodes(stream, url)
+        get_all_episodes(stream, url, options)
     else:
         get_one_media(stream)
 
 
-def get_all_episodes(stream, url):
+def get_all_episodes(stream, url, options):
     name = os.path.dirname(formatname(dict(), stream.config))
 
     if name and os.path.isfile(name):
