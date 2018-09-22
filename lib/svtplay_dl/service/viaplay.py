@@ -217,7 +217,8 @@ class Viaplay(Service, OpenGraphThumbMixin):
         baseurl = self.url
         match = re.search("(saeson|sasong|sesong)-\d+", urlparse(self.url).path)
         if match:
-            baseurl = self.url[:self.url.rfind("/")]
+            if re.search("(avsnitt|episode)", urlparse(baseurl).path):
+                baseurl = baseurl[:baseurl.rfind("/")]
             baseurl = baseurl[:baseurl.rfind("/")]
 
         for i in seasons:
@@ -274,7 +275,7 @@ class Viaplay(Service, OpenGraphThumbMixin):
             if episode:
                 try:
                     episode = int(episode)
-                except TypeError:
+                except (TypeError, ValueError):
                     title = episode
                     episode = None
             else:

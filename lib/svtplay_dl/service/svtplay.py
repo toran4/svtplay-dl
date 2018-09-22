@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlparse, parse_qs
 from operator import itemgetter
 
 from svtplay_dl.log import log
-from svtplay_dl.service import Service, OpenGraphThumbMixin
+from svtplay_dl.service import Service, MetadataThumbMixin
 from svtplay_dl.utils.text import filenamify
 from svtplay_dl.fetcher.hds import hdsparse
 from svtplay_dl.fetcher.hls import hlsparse
@@ -20,7 +20,7 @@ from svtplay_dl.error import ServiceError
 URL_VIDEO_API = "http://api.svt.se/videoplayer-api/video/"
 
 
-class Svtplay(Service, OpenGraphThumbMixin):
+class Svtplay(Service, MetadataThumbMixin):
     supported_domains = ['svtplay.se', 'svt.se', 'beta.svtplay.se', 'svtflow.se']
 
     def get(self):
@@ -70,6 +70,7 @@ class Svtplay(Service, OpenGraphThumbMixin):
                     janson = json.loads(match.group(1))["videoPage"]
 
         self.outputfilename(janson["video"])
+        self.extrametadata(janson)
 
         if "programVersionId" in janson["video"]:
             vid = janson["video"]["programVersionId"]
@@ -266,3 +267,38 @@ class Svtplay(Service, OpenGraphThumbMixin):
             return season, episode
         else:
             return None, None
+
+    def extrametadata(self, data):
+        self.output["tvshow"] = (self.output["season"] is not None and
+                                 self.output["episode"] is not None)
+        try:
+            self.output["publishing_datetime"] = data["video"]["broadcastDate"] / 1000
+        except KeyError:
+            pass
+        try:
+            title = data["video"]["programTitle"]
+            self.output["title_nice"] = title
+        except KeyError:
+            title = data["video"]["titleSlug"]
+            self.output["title_nice"] = title
+        try:
+            # Get the image if size/format is not specified in the URL set it to large
+            url = data['state']["titleModel"]["thumbnail"].format(format="large")
+            self.output["showthumbnailurl"] = url
+        except KeyError:
+            pass
+        try:
+            url = data["video"]["thumbnailXL"].format(format="large")
+            self.output["episodethumbnailurl"] = url
+        except KeyError:
+            # Get the image if size/format is not specified in the URL set it to large
+            url = data["video"]["thumbnail"].format(format="large")
+            self.output["episodethumbnailurl"] = url
+        try:
+            self.output["showdescription"] = data['state']["titleModel"]["description"]
+        except KeyError:
+            pass
+        try:
+            self.output["episodedescription"] = data["video"]["description"]
+        except KeyError:
+            pass

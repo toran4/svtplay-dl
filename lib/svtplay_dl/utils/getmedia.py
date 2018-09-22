@@ -3,6 +3,7 @@ import sys
 import copy
 import logging
 from shutil import which
+from datetime import datetime
 
 
 from svtplay_dl.log import log
@@ -15,21 +16,22 @@ from svtplay_dl.postprocess import postprocess
 from svtplay_dl.utils.stream import select_quality, list_quality
 from svtplay_dl.utils.text import exclude
 from svtplay_dl.error import UIException
+from svtplay_dl.utils.nfo import write_nfo_episode, write_nfo_tvshow
 
 
-def get_multiple_media(urls, options):
-    if options.output and os.path.isfile(options.output):
+def get_multiple_media(urls, config):
+    if config.get("output") and os.path.isfile(config.output):
         log.error("Output must be a directory if used with multiple URLs")
         sys.exit(2)
-    elif options.output and not os.path.exists(options.output):
+    elif config.get("output") and not os.path.exists(config.get("output")):
         try:
-            os.makedirs(options.output)
+            os.makedirs(config.get("output"))
         except OSError as e:
             log.error("%s: %s", e.strerror, e.filename)
             return
 
     for url in urls:
-        get_media(url, copy.copy(options))
+        get_media(url, copy.copy(config))
 
 
 def get_media(url, options, version="Unknown"):
@@ -55,9 +57,9 @@ def get_media(url, options, version="Unknown"):
     else:
         get_one_media(stream)
 
-
+		
 def get_all_episodes(stream, url, options):
-    name = os.path.dirname(formatname(dict(), stream.config))
+    name = os.path.dirname(formatname({"basedir": True}, stream.config))
 
     if name and os.path.isfile(name):
         log.error("Output must be a directory if used with --all-episodes")
@@ -125,6 +127,23 @@ def get_one_media(stream):
             logging.error("Include the URL used, the stack trace and the output of svtplay-dl --version in the issue")
         return
 
+    try:
+        after_date = datetime.fromisoformat(stream.config.get("after_date"))
+    except (ValueError, TypeError, KeyError):
+        after_date = None
+    try:
+        pub_date = datetime.fromtimestamp(stream.output["publishing_datetime"])
+    except (ValueError, TypeError, KeyError):
+        pub_date = None
+    if after_date is not None and pub_date is not None and pub_date.date() < after_date.date():
+        logging.info("Video {}S{}E{} skipped since published {} before {}. ".format(
+            stream.output["title"],
+            stream.output["season"],
+            stream.output["episode"],
+            pub_date.date(),
+            after_date.date()))
+        return
+
     if stream.config.get("require_subtitle") and not subs:
         logging.info("No subtitles available")
         return
@@ -175,26 +194,31 @@ def get_one_media(stream):
             list_quality(videos)
             return
         try:
-            stream = select_quality(stream.config, videos)
-            if stream.config.get("get_url"):
-                print(stream.url)
+            fstream = select_quality(stream.config, videos)
+            if fstream.config.get("get_url"):
+                print(fstream.url)
                 return
-            logging.info("Selected to download %s, bitrate: %s", stream.name, stream.bitrate)
-            stream.download()
+            logging.info("Selected to download %s, bitrate: %s", fstream.name, fstream.bitrate)
+            fstream.download()
         except UIException as e:
-            if stream.config.get("verbose"):
+            if fstream.config.get("verbose"):
                 raise e
             log.error(e)
             sys.exit(2)
 
-        if stream.config.get("thumbnail") and hasattr(stream, "get_thumbnail"):
+        if fstream.config.get("thumbnail") and hasattr(stream, "get_thumbnail"):
             stream.get_thumbnail(stream.config)
-        post = postprocess(stream, stream.config, subfixes)
-        if stream.audio and post.detect:
+        if stream.config.get("nfo"):
+            # Create NFO files
+            write_nfo_episode(stream.output, stream.config)
+            write_nfo_tvshow(stream.output, stream.config)
+
+        post = postprocess(fstream, fstream.config, subfixes)
+        if fstream.audio and post.detect:
             post.merge()
-        if stream.audio and not post.detect and stream.finished:
+        if fstream.audio and not post.detect and fstream.finished:
             logging.warning("Cant find ffmpeg/avconv. audio and video is in seperate files. if you dont want this use -P hls or hds")
-        if stream.name == "hls" or stream.config.get("remux"):
+        if fstream.name == "hls" or fstream.config.get("remux"):
             post.remux()
-        if stream.config.get("silent_semi") and stream.finished:
-            logging.log(25, "Download of %s was completed" % stream.options.output)
+        if fstream.config.get("silent_semi") and fstream.finished:
+            logging.log(25, "Download of %s was completed" % fstream.options.output)
