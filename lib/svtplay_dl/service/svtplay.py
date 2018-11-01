@@ -48,7 +48,7 @@ class Svtplay(Service, MetadataThumbMixin):
                 yield i
             return
 
-        match = re.search("__svtplay'] = ({.*});", self.get_urldata())
+        match = re.search(r"__svtplay'] = ({.*});", self.get_urldata())
         if not match:
             yield ServiceError("Can't find video info.")
             return
@@ -259,18 +259,22 @@ class Svtplay(Service, MetadataThumbMixin):
         self.output["episodename"] = other
 
     def seasoninfo(self, data):
+        season, episode = None, None
         if "season" in data and data["season"]:
             season = "{:02d}".format(data["season"])
+            if int(season) == 0:
+                season = None
+        if "episodeNumber" in data and data["episodeNumber"]:
             episode = "{:02d}".format(data["episodeNumber"])
-            if int(season) == 0 and int(episode) == 0:
-                return None, None
-            return season, episode
-        else:
-            return None, None
+            if int(episode) == 0:
+                episode = None
+        if episode is not None and season is None:
+            # Missing season, happens for some barnkanalen shows assume first and only
+            season = "01"
+        return season, episode
 
     def extrametadata(self, data):
-        self.output["tvshow"] = (self.output["season"] is not None and
-                                 self.output["episode"] is not None)
+        self.output["tvshow"] = (self.output["season"] is not None and self.output["episode"] is not None)
         try:
             self.output["publishing_datetime"] = data["video"]["broadcastDate"] / 1000
         except KeyError:
@@ -281,18 +285,31 @@ class Svtplay(Service, MetadataThumbMixin):
         except KeyError:
             title = data["video"]["titleSlug"]
             self.output["title_nice"] = title
+
         try:
-            # Get the image if size/format is not specified in the URL set it to large
-            url = data['state']["titleModel"]["thumbnail"].format(format="large")
+            t = data['state']["titleModel"]["thumbnail"]
+        except KeyError:
+            t = ""
+        if isinstance(t, dict):
+            url = "https://www.svtstatic.se/image/original/default/{id}/{changed}?format=auto&quality=100".format(**t)
             self.output["showthumbnailurl"] = url
-        except KeyError:
-            pass
-        try:
-            url = data["video"]["thumbnailXL"].format(format="large")
-            self.output["episodethumbnailurl"] = url
-        except KeyError:
+        elif t:
             # Get the image if size/format is not specified in the URL set it to large
-            url = data["video"]["thumbnail"].format(format="large")
+            url = t.format(format="large")
+            self.output["showthumbnailurl"] = url
+        try:
+            t = data["video"]["thumbnailXL"]
+        except KeyError:
+            try:
+                t = data["video"]["thumbnail"]
+            except KeyError:
+                t = ""
+        if isinstance(t, dict):
+            url = "https://www.svtstatic.se/image/original/default/{id}/{changed}?format=auto&quality=100".format(**t)
+            self.output["episodethumbnailurl"] = url
+        elif t:
+            # Get the image if size/format is not specified in the URL set it to large
+            url = t.format(format="large")
             self.output["episodethumbnailurl"] = url
         try:
             self.output["showdescription"] = data['state']["titleModel"]["description"]
