@@ -11,7 +11,6 @@ import copy
 from urllib.parse import urlparse
 
 from svtplay_dl.service import Service, OpenGraphThumbMixin
-from svtplay_dl.fetcher.rtmp import RTMP
 from svtplay_dl.fetcher.hds import hdsparse
 from svtplay_dl.fetcher.hls import hlsparse
 from svtplay_dl.subtitle import subtitle
@@ -43,6 +42,9 @@ class Viaplay(Service, OpenGraphThumbMixin):
         if match:
             return match.group(1)
         match = re.search(r'data-videoid="([0-9]+)', html_data)
+        if match:
+            return match.group(1)
+        match = re.search(r'"mediaGuid":"([0-9]+)"', html_data)
         if match:
             return match.group(1)
 
@@ -171,23 +173,13 @@ class Viaplay(Service, OpenGraphThumbMixin):
             else:
                 yield subtitle(copy.copy(self.config), subtype, dataj["subtitles_for_hearing_impaired"], output=self.output)
 
-        if streamj["streams"]["medium"] and streamj["streams"]["medium"] != "[empty]":
+        if streamj["streams"]["medium"] and streamj["streams"]["medium"][:7] != "[empty]":
             filename = streamj["streams"]["medium"]
             if ".f4m" in filename:
                 streams = hdsparse(self.config, self.http.request("get", filename, params={"hdcore": "3.7.0"}),
                                    filename, output=self.output)
                 for n in list(streams.keys()):
                     yield streams[n]
-            else:
-                parse = urlparse(filename)
-                match = re.search("^(/[^/]+)/(.*)", parse.path)
-                if not match:
-                    yield ServiceError("Can't get rtmpparse info")
-                    return
-                filename = "{0}://{1}:{2}{3}".format(parse.scheme, parse.hostname, parse.port, match.group(1))
-                path = "-y {0}".format(match.group(2))
-                other = "-W http://flvplayer.viastream.viasat.tv/flvplayer/play/swf/player.swf {0}".format(path)
-                yield RTMP(copy.copy(self.config), filename, 800, other=other, output=self.output)
 
         if streamj["streams"]["hls"]:
             streams = hlsparse(self.config, self.http.request("get", streamj["streams"]["hls"]),
