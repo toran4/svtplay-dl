@@ -114,9 +114,9 @@ class Tv4play(Service, OpenGraphThumbMixin):
                                     clips_panel.append(tag)
                 else:
                     if "tags" in item:
-                            for tag in item["tags"]:
-                                if re.search(r"\d+", tag):
-                                    episodes_panel.append(tag)
+                        for tag in item["tags"]:
+                            if re.search(r"\d+", tag):
+                                episodes_panel.append(tag)
 
         if episodes_panel:
             graph_list = self._graphql(show, episodes_panel, "EPISODE")
