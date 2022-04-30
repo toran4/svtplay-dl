@@ -102,29 +102,21 @@ class Tv4play(Service, OpenGraphThumbMixin):
         janson2 = jansson["props"]["pageProps"]["initialApolloState"]
         show = jansson["query"]["nid"]
 
-        program = janson2[f'Program:{{"nid":"{show}"}}']
         episodes_panel = []
         clips_panel = []
-        for panel in program["panels"]:
-            if panel["assetType"] == "EPISODE":
-                params = json.loads(panel["loadMoreParams"])
-                if "tags" in params:
-                    for tag in params["tags"].split(","):
-                        if re.search(r"\d+", tag):
-                            episodes_panel.append(tag)
-                for key in panel.keys():
-                    if "videoList" in key:
-                        for video in panel[key]["videoAssets"]:
-                            match = re.search(r"VideoAsset:(\d+)", video["__ref"])
-                            if match:
-                                if match.group(1) not in items:
-                                    items.append(int(match.group(1)))
-            if config.get("include_clips") and panel["assetType"] == "CLIP":
-                params = json.loads(panel["loadMoreParams"])
-                if "tags" in params:
-                    for tag in params["tags"].split(","):
-                        if re.search(r"\d+", tag):
-                            clips_panel.append(tag)
+        for item in janson2.values():
+            if item["__typename"] == "VideoAsset":
+                if item["clip"]:
+                    if config.get("include_clips"):
+                        if "tags" in item:
+                            for tag in item["tags"]:
+                                if re.search(r"\d+", tag):
+                                    clips_panel.append(tag)
+                else:
+                    if "tags" in item:
+                            for tag in item["tags"]:
+                                if re.search(r"\d+", tag):
+                                    episodes_panel.append(tag)
 
         if episodes_panel:
             graph_list = self._graphql(show, episodes_panel, "EPISODE")
